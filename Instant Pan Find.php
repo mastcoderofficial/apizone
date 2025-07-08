@@ -1,0 +1,236 @@
+
+<?php
+include('../includes/session.php');
+include('../includes/config.php');
+include('../template/ahkweb/header.php');
+
+if (isset($_POST['check']) && $_POST['check'] == "aadhaar") {
+    $aadhaar_check = $_POST['aadhaar_no'];
+    $url = file_get_contents("https://kycapizone.in/api/verification/aadhaar_verify.php?aadhaar_no=$aadhaar_check");
+    $result = json_decode($url, true);
+
+    if ($result['status'] === 'success') {
+        if ($result['code'] === '200') {
+            // Success - Aadhaar is linked
+            echo '<script>
+                $(function(){
+                    Swal.fire(
+                        "We Found Linked Data",
+                        "' . $result['message'] . '",
+                        "success"
+                    )
+                })
+            </script>';
+        } else if ($result['code'] === '422') {
+            // Aadhaar is not linked
+            echo '<script>
+                $(function(){
+                    Swal.fire(
+                        "Aadhaar Not Linked To Any Pan.",
+                        "' . $result['message'] . '",
+                        "error"
+                    )
+                })
+            </script>';
+        } else if ($result['code'] === '404') {
+            // Invalid Aadhaar number
+            echo '<script>
+                $(function(){
+                    Swal.fire(
+                        "Please Enter Valid Aadhaar No.",
+                        "' . $result['message'] . '",
+                        "warning"
+                    )
+                })
+            </script>';
+        }
+    } else {
+        // Server error
+        echo '<script>
+            $(function(){
+                Swal.fire(
+                    "' . $result['status'] . '",
+                    "SERVER DOWN PLEASE TRY AFTER SOMETIME",
+                    "error"
+                )
+            })
+        </script>';
+    }
+}
+
+if($result['code'] === '200'){
+    if ($_POST['aadhaar_no']) {
+        $aadhaar = mysqli_real_escape_string($ahk_conn, $_POST['aadhaar_no']);
+        $username = $udata['phone'];
+        $appliedby = $udata['phone'];
+        $price = mysqli_fetch_assoc(mysqli_query($ahk_conn, "SELECT * FROM pricing WHERE service_name='pan_no' "));
+        $fee = $price['price'];
+        $wallet_amount = $udata['balance'];
+        $debit_fee = $wallet_amount - $fee;
+
+
+        $api_zone = "API_KEY_PASTE"; // Buy APi From This Website https://apizone.co.in ( Design & Development By KPS )
+
+        if ($wallet_amount >= $fee) {
+            $url = "https://kycapizone.in/api/panno/instant/aadhaar_to_pan.php?api_key=$api_zone&aadhaar_no=$aadhaar";
+            $curl = curl_init();
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => "",
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 0,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => "GET",
+            ));
+            $response = curl_exec($curl);
+            curl_close($curl);
+
+            $resdata = json_decode($response, true);
+            $pan = $resdata['result']['pan_no'];
+            $clint = $resdata['result']['client_id'];
+            $application_no = $resdata['result']['application_no'];
+            $message = $resdata['message'];
+
+            if (!empty($resdata['error'])) {
+                echo "<script>
+                    $(function(){
+                        Swal.fire('" . $resdata['error'] . "', 'Contact Admin', 'error')
+                    })
+                    setTimeout(() => { window.location=''; }, 5000);
+                </script>";
+            } else if ($resdata['status'] === "100") {
+                $debit = mysqli_query($ahk_conn, "UPDATE users SET balance=balance-$fee WHERE phone='$appliedby'");
+                $updatehistory = mysqli_query($ahk_conn, "INSERT INTO wallethistory(userid, amount, balance, purpose, status, type) VALUES ('$appliedby','$fee','$wallet_amount','PAN Number Find','1','Debit')");
+
+                if ($debit) {
+                    $insert = mysqli_query($ahk_conn, "INSERT INTO instantpan_find (application_no,username,aadhaar_no,pan_no,clint_id, status,status_code,fee,old_balance,new_balance,message) VALUES ('$application_no','$username','$aadhaar', '$pan', '$clint', '$resdata[status]', '$response','$fee','$wallet_amount','$debit_fee', '$message')");
+                    if ($insert) {
+                        echo "<script>
+                            $(function(){
+                                Swal.fire('Pan No for $aadhaar is $pan', '$application_no Message : $message', 'success')
+                            })
+                            setTimeout(() => { window.location=''; }, 5044300);
+                        </script>";
+                    } else {
+                        echo "<script>
+                            $(function(){
+                                Swal.fire('Balance Debited but data not insert', 'DATA INSERT ERROR', 'warning')
+                            })
+                            setTimeout(() => { window.location=''; }, 1200);
+                        </script>";
+                    }
+                } else {
+                    echo "<script>
+                        $(function(){
+                            Swal.fire('Balance Debit error', 'something went wrong', 'error')
+                        })
+                        setTimeout(() => { window.location=''; }, 1200);
+                    </script>";
+                }
+            } else {
+                echo "<script>
+                    $(function(){
+                        Swal.fire('PAN Not Found for $aadhaar', '$message', 'warning')
+                    })
+                </script>";
+            }
+        } else {
+            echo "<script>
+                $(function(){
+                    Swal.fire('Wallet Balance is Low!', 'Please Recharge Now!', 'error')
+                })
+                setTimeout(() => { window.location='wallet.php'; }, 1200);
+            </script>";
+        }
+    }
+}
+include('footer.php');
+?>
+		<div class="page-wrapper">
+			<div class="page-content">
+			
+
+<div class="mobile-menu-overlay"></div>
+<div class="main-container">
+    <!DOCTYPE html>
+                    <?php echo $msg; ?>
+                    <div class="col-lg-12">
+                                         <div class="card" style="margin-left: 10px;    padding-left: 30px;
+                                        padding-top: 12px;
+                                      box-shadow: 1px 5px 5px 5px;">
+                                 <div class="stat-widget-two">
+                            <div class="stat-content">
+                        <div class="stat-text">
+                            <div class="container-fluid">
+                              
+                                <div class="row">
+                                    <div class="col-lg-4 col-md-6 col-sm-6">
+                                        <div class="card">
+                                            <div class="card-body">
+                            <div class="alert alert-danger" role="alert">
+                                We Are Trying Our Best
+                                <a href="" class="alert-link">AADHAR NUMBER TO PAN NUMBER WITH PAN CARD DETAIL........ </a>
+                            </div>
+                            	<form action="" method="POST" class="row g-3">
+                                <div class="card-body">
+                                        <div class="col-md-12">
+                                            <div class="form-group">
+                                                <label>Aadhar Number.</label>
+                                              	<input name="aadhaar_no" type="text" id="aadhaar_no" placeholder="Enter 12 Digit AADHAAR  no" class="form-control" >
+                                              	 <input type="hidden" name="check" value="aadhaar">
+                                                  </div>
+                                                   </select>
+                                                <hr>
+                                             <div class="form-group col-md-10">                           
+                                       <input class="form-control " id="text" name="" value="Fee ₹ <?php  
+										$price = mysqli_fetch_assoc(mysqli_query($ahk_conn,"SELECT price FROM pricing WHERE service_name='pan_no'")); 
+										echo "₹" .$price['price'];
+										?>" placeholder="Rc. No." type="text"  required readonly>
+                                       <hr>
+                                     
+                                    </div>
+                                </div>
+							<div class="form-actions">
+                            <div class="text-left">
+                            <button class="form-control btn btn-success" name="submit" id="submit"><i class="fa fa-check-circle"></i> Submit</button>
+							</div>
+						</div>
+                    </form>
+                  </div>
+               </div>
+            </div>
+               </div>
+                <div class="col-lg-8 col-md-6 col-sm-6">
+                    <div class="card" style="height: 290px; background-color: #FCF3CF;">
+                        <div class="card-body">
+                             <h6>We are giving you this service only for verification and not for misuse. If you misuse it, you will be responsible for it...</h6>
+                             <hr>
+                            <h6>Aadhaar Number: <?php echo $aadhaar;?> </h6>
+                                            <h6><li style="color:">Pan Number: <?php echo $resdata['result']['pan_no'];?> <b></b></h6>
+                                            <h6><li style="color:">Cilint Id: <B><?php echo $resdata['result']['client_id'];?>
+                                             <h6><li style="color:">Application No: <B><?php echo $resdata['result']['application_no'];?>
+
+                                                  
+                             <hr>
+                             <div style="display: flex; justify-content:flex-start">
+                             <div class="form-group col-md-6">
+                          <input class="form-control " id="text" name="" value="Power By APIZONE" placeholder="Rc. No." type="text"  required readonly>
+                       </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+          
+       </div>
+           <br>
+             <br>
+               <br>
+                 <br>
+		
+		<!--end page wrapper -->
+		<?php 
+		include('footer.php');
+		?>
